@@ -27,8 +27,6 @@
         "mosh"
         "pass"
         "vi-mode"
-        "zsh-autosuggestions"
-        "zsh-syntax-highlighting"
       ];
     };
   };

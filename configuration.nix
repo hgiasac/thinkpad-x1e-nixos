@@ -7,13 +7,14 @@
 {
   imports =
     [ # Include the results of the hardware scan.
-      <nixos-hardware/lenovo/thinkpad/x1/6th-gen>
+      <nixos-hardware/lenovo/thinkpad/x1-extreme>
       ./hardware-configuration.nix
       ./includes/fonts.nix
-      ./includes/zsh.nix
+     ./includes/zsh.nix
       ./includes/variables.nix
       ./includes/programs.nix
       ./includes/virtualisation.nix
+      ./includes/nvidia.nix
     ];
 
   networking.hostName = "nixos"; # Define your hostname.
@@ -25,52 +26,66 @@
   # networking.proxy.noProxy = "127.0.0.1,localhost,internal.domain";
 
   # Select internationalisation properties.
+  console.keyMap = "us";
+  console.font = "latarcyrheb-sun32";
+
   i18n = {
-    consoleFont = "latarcyrheb-sun32";
-    consoleKeyMap = "us";
-    defaultLocale = "en_US.UTF-8";
+    # consoleFont = "latarcyrheb-sun32";
+    # consoleKeyMap = "us";
+    # defaultLocale = "en_US.UTF-8";
     inputMethod = {
       enabled = "fcitx";
-      fcitx.engines = with pkgs.fcitx-engines; [ mozc chewing m17n unikey ];
+      fcitx.engines = with pkgs.fcitx-engines; [ chewing m17n unikey ];
     };
   };
 
   # Set your time zone.
   time.timeZone = "Asia/Saigon";
   
-
-  
-  # enable zsh
-  programs.zsh.enable = true;  
- 
   # List packages installed in system profile. To search, run:
   # $ nix search wget
   environment.systemPackages = with pkgs; [
     wget 
     vim
     neovim
-    p7zip
+    unar
     unzip
+    file
+    killall
     lambda-mod-zsh-theme
     docker
     docker_compose
     git
-    nodejs-11_x 
+    nodejs 
     pulseeffects 
     flatpak
-    python36
-    python36Packages.pip
+    python
+    cmake
+    gnumake
+    python3Full
+    gcc
     tmux
-    busybox
+    binutils-unwrapped
     home-manager
     arandr
     autorandr
-    xorg.xf86videointel
+    # xorg.xf86videointel
     gnupg
     cabal-install
     cabal2nix
-    stack 
+    stack
+    hlint
     ghc
+    go
+    python37Packages.pip
+    python37Packages.pylint                                                                                                                                                           
+    pkg-config
+    libffi
+    gnutar
+    zlib
+    jq
+    kubernetes-helm
+    zoom-us
   ];
   
   # packages config 
@@ -86,7 +101,10 @@
         '';
       };
     };
-
+    
+    permittedInsecurePackages = [
+      "p7zip-16.02"
+    ];
   };
   
   # Enable dconf
@@ -108,19 +126,57 @@
   # networking.firewall.allowedUDPPorts = [ ... ];
   # Or disable the firewall altogether.
   # networking.firewall.enable = false;
-
+  networking.extraHosts =
+  ''
+    127.0.0.1 data.lux-dev.hasura.me
+    127.0.0.1 auth.lux-dev.hasura.me
+    127.0.0.1 logs.lux-dev.hasura.me
+    127.0.0.1 logs-grpc.lux-dev.hasura.me
+    127.0.0.1 account.lux-dev.hasura.me
+    127.0.0.1 metrics.lux-dev.hasura.me
+    127.0.0.1 lux-dev.hasura.me
+    127.0.0.1 tenant1.nginx.hasura.me
+    127.0.0.1 tenant2.nginx.hasura.me
+    127.0.0.1 tenant3.nginx.hasura.me
+  '';
   # Enable CUPS to print documents.
   # services.printing.enable = true;
 
   # Enable sound.
   sound.enable = true;
-  hardware.pulseaudio.enable = true;
+  hardware.pulseaudio = {
+    enable = true;
+    daemon = {
+      config = {
+        avoid-resampling = "yes";
+      };
+    };
+
+    extraModules = [ pkgs.pulseaudio-modules-bt ];
+
+    # NixOS allows either a lightweight build (default) or full build of PulseAudio to be installed.
+    # Only the full build has Bluetooth support, so it must be selected here.
+    package = pkgs.pulseaudioFull;
+   
+    extraConfig = "
+      load-module module-switch-on-connect
+    ";
+  };
+  
+  # Enable bluetooth
+  hardware.bluetooth.enable = true;
+  services.blueman.enable = true;
+  hardware.bluetooth.package = pkgs.bluezFull;
+  # hardware.bluetooth.config = {
+  #  General = {
+  #    Enable = "Source,Sink,Media,Socket";
+  #  };
+  # };
 
   # Enable the X11 windowing system.
   services.xserver = {
     enable = true;
     layout = "us";
-    videoDrivers = [ "intel" "nvidia" ];
     dpi = 240;
 
 
@@ -135,17 +191,17 @@
     # Facts:
     #  - TwinView is automatically enabled in recent nvidia drivers (no need to enable it explicitly)
     #  - nvidiaXineramaInfo must be disabled, otherwise xmonad will treat the display as two monitors.
-    screenSection = ''
-      Option "nvidiaXineramaInfo"  "false"
-    '';
+    # screenSection = ''
+    #   Option "nvidiaXineramaInfo"  "false"
+    # '';
   };
-  # services.xserver.xkbOptions = "eurosign:e";
-  hardware.bumblebee = {
-    enable = true; 
-    driver = "nvidia";
-    pmMethod = "none";
-    connectDisplay = true;
-  };
+   # services.xserver.xkbOptions = "eurosign:e";
+  # hardware.bumblebee = {
+  #   enable = true; 
+  #   driver = "nvidia";
+  #   pmMethod = "none";
+  #   connectDisplay = true;
+  # };
   
   
   hardware.opengl = {
@@ -153,19 +209,34 @@
     driSupport = true;
     driSupport32Bit = true;
   };
-  
-  # Define a user account. Don't forget to set a password with ‘passwd’.
-  
+
+  # Set limits for esync.
+  systemd.extraConfig = "DefaultLimitNOFILE=1048576";
+  security.pam.loginLimits = [{
+    domain = "*";
+    type = "hard";
+    item = "nofile";
+    value = "1048576";
+  }];
+
+  # android device 
+  programs.adb.enable = true;
+
+  # Define a user account. Don't forget to set a password with ‘passwd’. 
   users = {
     defaultUserShell = pkgs.zsh;
  
     users.hgiasac = {
       isNormalUser = true;
-      extraGroups = [ "wheel" "sudo" "networkmanager" "audio" "video" "lxd" "docker" ]; # Enable ‘sudo’ for the user.
+      extraGroups = [ "wheel" "sudo" "networkmanager" "audio" "video" "lxd" "docker" "adbusers" "lp"]; # Enable ‘sudo’ for the user.
       shell = pkgs.zsh;
 
     };
-  
+    
+    users.www-data = {
+      isNormalUser = false;
+      extraGroups = [ "www-data" ];
+    };
   };
   
   # This value determines the NixOS release with which your system is to be
@@ -182,26 +253,26 @@
     loader.efi.canTouchEfiVariables = true;
 
 
-    extraModprobeConfig = ''
-      options bbswitch load_state=-1 unload_state=1 nvidia-drm
-    '';
+    # extraModprobeConfig = ''
+    #   options bbswitch load_state=-1 unload_state=1 nvidia-drm
+    # '';
     
-    extraModulePackages = [ config.boot.kernelPackages.nvidia_x11 ];
+    # extraModulePackages = [ config.boot.kernelPackages.nvidia_x11 ];
     
-    blacklistedKernelModules = [
-      "nouveau" 
-      "rivafb"
-      "nvidiafb"
-      "rivatv"
-      "nv"
-    ];
+    # blacklistedKernelModules = [
+    #   "nouveau" 
+    #   "rivafb"
+    #   "nvidiafb"
+    #   "rivatv"
+    #  "nv"
+    # ];
 
-    kernelParams = [
-      "acpi_osi=Linux"
-      "i915.enable_psr=1"
-      "i915.fastboot=1"
-      "i915.enable_guc=2"
-    ];
+    # kernelParams = [
+    #   "acpi_osi=Linux"
+    #   "i915.enable_psr=1"
+    #   "i915.fastboot=1"
+    #   "i915.enable_guc=2"
+    # ];
  
   };
 }
